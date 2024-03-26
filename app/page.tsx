@@ -30,6 +30,7 @@ import "@tensorflow/tfjs-backend-webgl";
 import { drawOnCanvas } from "@/utils/draw";
 
 let interval: any = null;
+let stopTimeout: any = null;
 
 export default function HomePage() {
   const webCamRef = useRef<Webcam>(null);
@@ -103,6 +104,17 @@ export default function HomePage() {
 
       resizeCanvas(canvasRef, webCamRef);
       drawOnCanvas(mirrored, predictions, canvasRef.current?.getContext("2d"));
+
+      let isPerson: boolean = false;
+      if (predictions.length > 0) {
+        predictions.forEach((prediction) => {
+          isPerson = prediction.class === "person";
+        });
+
+        if (isPerson && autoRecord) {
+          startRecording(true);
+        }
+      }
     }
   }
 
@@ -112,7 +124,7 @@ export default function HomePage() {
     }, 100);
 
     return () => clearInterval(interval);
-  }, [webCamRef.current, model, runPrediction, mirrored]);
+  }, [webCamRef.current, runPrediction, mirrored, autoRecord]);
 
   return (
     <div className="flex h-screen">
@@ -231,18 +243,25 @@ export default function HomePage() {
 
     if (mediaRecorderRef.current?.state == "recording") {
       mediaRecorderRef.current.requestData();
+      clearTimeout(stopTimeout);
       mediaRecorderRef.current.stop();
       toast("Recording saved to Downloads folder");
     } else {
-      startRecording();
+      startRecording(false);
     }
   }
 
-  function startRecording() {
+  function startRecording(doBeep: boolean) {
     if (webCamRef.current && mediaRecorderRef.current?.state !== "recording") {
       mediaRecorderRef.current?.start();
+      doBeep && beep(volume);
 
-      setTimeout(() => {}, 30000);
+      stopTimeout = setTimeout(() => {
+        if (mediaRecorderRef.current?.state === "recording") {
+          mediaRecorderRef.current.requestData();
+          mediaRecorderRef.current.stop();
+        }
+      }, 30000);
     }
   }
 
