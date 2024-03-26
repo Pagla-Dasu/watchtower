@@ -19,7 +19,7 @@ import {
   Video,
   Volume2,
 } from "lucide-react";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Rings } from "react-loader-spinner";
 import Webcam from "react-webcam";
 import { toast } from "sonner";
@@ -27,6 +27,9 @@ import { toast } from "sonner";
 import * as cocossd from "@tensorflow-models/coco-ssd";
 import "@tensorflow/tfjs-backend-cpu";
 import "@tensorflow/tfjs-backend-webgl";
+import { drawOnCanvas } from "@/utils/draw";
+
+let interval: any = null;
 
 export default function HomePage() {
   const webCamRef = useRef<Webcam>(null);
@@ -36,6 +39,80 @@ export default function HomePage() {
   const [isRecording, setIsRecording] = useState<boolean>(false);
   const [autoRecord, setAutoRecord] = useState<boolean>(false);
   const [volume, setVolume] = useState(0.8);
+  const [model, setModel] = useState<cocossd.ObjectDetection>();
+  const [loading, setLoading] = useState(false);
+
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+
+  useEffect(() => {
+    if (webCamRef && webCamRef.current) {
+      const stream = (webCamRef.current.video as any).captureStream();
+
+      if (stream) {
+        mediaRecorderRef.current = new MediaRecorder(stream);
+
+        mediaRecorderRef.current.ondataavailable = (e) => {
+          if (e.data.size > 0) {
+            const recordBlob = new Blob([e.data], { type: "video" });
+            const videoURL = URL.createObjectURL(recordBlob);
+
+            const a = document.createElement("a");
+            a.href = videoURL;
+            a.download = `${formatDate(new Date())}.webm`;
+            a.click();
+          }
+        };
+        mediaRecorderRef.current.onstart = (e) => {
+          setIsRecording(true);
+        };
+        mediaRecorderRef.current.onstop = (e) => {
+          setIsRecording(false);
+        };
+      }
+    }
+  }, [webCamRef]);
+
+  useEffect(() => {
+    setLoading(true);
+    initModel();
+  }, []);
+
+  async function initModel() {
+    const loadedModel: cocossd.ObjectDetection = await cocossd.load({
+      base: "mobilenet_v2",
+    });
+    setModel(loadedModel);
+  }
+
+  useEffect(() => {
+    if (model) {
+      setLoading(false);
+    }
+  }, [model]);
+
+  async function runPrediction() {
+    if (
+      model &&
+      webCamRef.current &&
+      webCamRef.current.video &&
+      webCamRef.current.video.readyState === 4
+    ) {
+      const predictions: cocossd.DetectedObject[] = await model.detect(
+        webCamRef.current.video,
+      );
+
+      resizeCanvas(canvasRef, webCamRef);
+      drawOnCanvas(mirrored, predictions, canvasRef.current?.getContext("2d"));
+    }
+  }
+
+  useEffect(() => {
+    interval = setInterval(() => {
+      runPrediction();
+    }, 100);
+
+    return () => clearInterval(interval);
+  }, [webCamRef.current, model, runPrediction, mirrored]);
 
   return (
     <div className="flex h-screen">
@@ -45,7 +122,7 @@ export default function HomePage() {
           <Webcam
             ref={webCamRef}
             mirrored={mirrored}
-            className="h-full w-full object-contain p-2"
+            className="h-full w-full object-contain p-2 rounded-xl"
           />
           <canvas
             ref={canvasRef}
@@ -133,6 +210,11 @@ export default function HomePage() {
           <RenderFeatureHighlightsSection />
         </div>
       </div>
+      {loading && (
+        <div className="z-50 absolute w-full h-full flex items-center justify-center bg-primary-foreground">
+          Getting things ready ... <Rings height={50} color="red" />
+        </div>
+      )}
     </div>
   );
 
@@ -143,6 +225,25 @@ export default function HomePage() {
 
   function userPromptRecord() {
     // record screen
+    if (!webCamRef.current) {
+      toast("Camera is not found. Please refresh");
+    }
+
+    if (mediaRecorderRef.current?.state == "recording") {
+      mediaRecorderRef.current.requestData();
+      mediaRecorderRef.current.stop();
+      toast("Recording saved to Downloads folder");
+    } else {
+      startRecording();
+    }
+  }
+
+  function startRecording() {
+    if (webCamRef.current && mediaRecorderRef.current?.state !== "recording") {
+      mediaRecorderRef.current?.start();
+
+      setTimeout(() => {}, 30000);
+    }
   }
 
   function toggleAutoRecord() {
@@ -255,4 +356,34 @@ export default function HomePage() {
       </div>
     );
   }
+}
+
+function resizeCanvas(
+  canvasRef: React.RefObject<HTMLCanvasElement>,
+  webCamRef: React.RefObject<Webcam>,
+) {
+  const canvas = canvasRef.current;
+  const video = webCamRef.current?.video;
+
+  if (canvas && video) {
+    const { videoWidth, videoHeight } = video;
+    canvas.width = videoWidth;
+    canvas.height = videoHeight;
+  }
+}
+
+function formatDate(d: Date) {
+  const formattedDate =
+    [
+      (d.getMonth() + 1).toString().padStart(2, "0"),
+      d.getDate().toString().padStart(2, "0"),
+      d.getFullYear(),
+    ].join("-") +
+    " " +
+    [
+      d.getHours().toString().padStart(2, "0"),
+      d.getMinutes().toString().padStart(2, "0"),
+      d.getSeconds().toString().padStart(2, "0"),
+    ].join("-");
+  return formattedDate;
 }
