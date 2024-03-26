@@ -28,6 +28,7 @@ import * as cocossd from "@tensorflow-models/coco-ssd";
 import "@tensorflow/tfjs-backend-cpu";
 import "@tensorflow/tfjs-backend-webgl";
 import { drawOnCanvas } from "@/utils/draw";
+import SocialMediaLinks from "@/components/social-links";
 
 let interval: any = null;
 let stopTimeout: any = null;
@@ -233,6 +234,18 @@ export default function HomePage() {
   // handle functions
   function userPromptScreenshot() {
     // take picture
+    if (!webCamRef) {
+      toast("Camera not found, please refresh");
+    } else {
+      const imgSrc = webCamRef.current?.getScreenshot();
+      const blob = base64toBlob(imgSrc);
+
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${formatDate(new Date())}.png`;
+      a.click();
+    }
   }
 
   function userPromptRecord() {
@@ -366,7 +379,7 @@ export default function HomePage() {
           <Separator />
           <li className="space-y-4">
             <strong>Share your thoughts 💬 </strong>
-            {/* <SocialMediaLinks /> */}
+            <SocialMediaLinks />
             <br />
             <br />
             <br />
@@ -405,4 +418,16 @@ function formatDate(d: Date) {
       d.getSeconds().toString().padStart(2, "0"),
     ].join("-");
   return formattedDate;
+}
+
+function base64toBlob(base64Data: any) {
+  const byteCharacters = atob(base64Data.split(",")[1]);
+  const arrayBuffer = new ArrayBuffer(byteCharacters.length);
+  const byteArray = new Uint8Array(arrayBuffer);
+
+  for (let i = 0; i < byteCharacters.length; i++) {
+    byteArray[i] = byteCharacters.charCodeAt(i);
+  }
+
+  return new Blob([arrayBuffer], { type: "image/png" }); // Specify the image type here
 }
